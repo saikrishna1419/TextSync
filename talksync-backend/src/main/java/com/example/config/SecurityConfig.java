@@ -13,6 +13,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class SecurityConfig {
@@ -46,35 +49,33 @@ public class SecurityConfig {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
-   @Bean
-public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-    http
-        .csrf(csrf -> csrf.disable()) // Disable CSRF (WebSockets don't need it)
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/ws/**").permitAll()  // Allow WebSocket handshake
-            .requestMatchers("/public/**").permitAll() // Allow public APIs
-            .anyRequest().authenticated()
-        )
-        .headers(headers -> headers.frameOptions().disable()) // Fix WebSocket security issues
-        .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Prevent session-based security
-        .formLogin().disable() // Disable login form to prevent redirects
-        .httpBasic().disable(); // Disable HTTP Basic Auth
+    @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                        .allowedOrigins("*") // Allow all origins (for testing)
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"); // Allow additional methods
+            }
+        };
+    }
 
-    return http.build();
-}
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf().disable() // Disable CSRF for WebSocket
+                .cors() // Enable CORS
+                .and()
+                .authorizeRequests()
+                .requestMatchers("/ws/**").permitAll() // Allow WebSocket connections
+                .anyRequest().authenticated() // Protect other routes
+                .and()
+                .httpBasic(); // Basic authentication for non-WebSocket requests
 
-@Bean
-public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration configuration = new CorsConfiguration();
-    configuration.setAllowedOrigins(List.of("*")); // Allow all origins (Change this in production)
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("*"));
-    configuration.setAllowCredentials(true);
+        // Disable session creation for WebSocket
+        http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
 
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", configuration);
-    return source;
-}
-
-
+        return http.build();
+    }
 }
